@@ -32,14 +32,13 @@ namespace Azure.Compute.Batch.Quickstart
         private BlobServiceClient _blobServiceClient;
 
         /// <summary>
-        /// Creates a pool with a configurable number of nodes, then submits tasks which print a 'Hello world' message.
-        /// The resulting stdout.txt or stderr.txt (depending on each task's exit code) is then printed to the console.
+        /// Creates a pool with a configurable number of nodes, then submits tasks which print the content of uploaded
+        /// text files resulting stdout.txt or stderr.txt (depending on each task's exit code) is then printed to the console.
         /// 
         /// After running, the job will be terminated and the pool will be deleted.
         /// </summary>
-        /// <param name="batchAccountResourceId">The ARM resource ID of the Batch account.</param>
         /// <returns>A task which completes when the sample has finished running.</returns>
-        public async Task Run(string batchAccountResourceId)
+        public async Task Run()
         {
             // #1 Create the clients need for the operations
 
