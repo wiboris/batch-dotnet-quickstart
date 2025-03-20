@@ -1,29 +1,22 @@
-﻿using Azure.Storage;
+﻿using Azure.Identity;
+using Azure.Storage;
 using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
-using Microsoft.Azure.Batch;
-using Microsoft.Azure.Batch.Auth;
-using Microsoft.Azure.Batch.Common;
+using Azure.Compute.Batch;
+using Azure.ResourceManager.Batch;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using Azure.ResourceManager;
+using System.Threading.Tasks;
 
-namespace BatchDotNetQuickstart
+namespace Azure.Compute.Batch.Quickstart
 {
     public class Program
     {
-        // Update the Batch and Storage account credential strings below with the values unique to your accounts.
-        // These are used when constructing connection strings for the Batch and Storage client objects.
 
-        // Batch account credentials
-        private const string BatchAccountName = "";
-        private const string BatchAccountKey = "";
-        private const string BatchAccountUrl = "";
-
-        // Storage account credentials
-        private const string StorageAccountName = "";
-        private const string StorageAccountKey = "";
+        private const string StorageAccountUri = "https://MYSTORAGEACCOUNT.blob.core.windows.net/";
 
         // Batch resource settings
         private const string PoolId = "DotNetQuickstartPool";
@@ -31,17 +24,14 @@ namespace BatchDotNetQuickstart
         private const int PoolNodeCount = 2;
         private const string PoolVMSize = "STANDARD_D1_V2";
 
-        static void Main()
+        public async static Task Main(string[] args)
         {
-            if (string.IsNullOrEmpty(BatchAccountName) ||
-                string.IsNullOrEmpty(BatchAccountKey) ||
-                string.IsNullOrEmpty(BatchAccountUrl) ||
-                string.IsNullOrEmpty(StorageAccountName) ||
-                string.IsNullOrEmpty(StorageAccountKey))
-            {
-                throw new InvalidOperationException("One or more account credential strings have not been populated. Please ensure that your Batch and Storage account credentials have been specified.");
-            }
+            await new BatchDotNetQuickStart().Run("batchAccountResourceId");
 
+            Console.WriteLine("Press return to exit...");
+            Console.ReadLine();
+
+            /*
             try
             {
                 Console.WriteLine("Sample start: {0}", DateTime.Now);
@@ -49,8 +39,12 @@ namespace BatchDotNetQuickstart
                 var timer = new Stopwatch();
                 timer.Start();
 
+                // Get the default Azure credential, which will be used to authenticate the clients
+                var credential = new DefaultAzureCredential();
+
                 // Create the blob client, for use in obtaining references to blob storage containers
-                var blobServiceClient = GetBlobServiceClient(StorageAccountName, StorageAccountKey);
+                Uri accountUri = new Uri(StorageAccountUri);
+                _blobServiceClient = new BlobServiceClient(accountUri, new DefaultAzureCredential());
 
                 // Use the blob client to create the input container in Azure Storage 
                 const string inputContainerName = "input";
@@ -186,113 +180,7 @@ namespace BatchDotNetQuickstart
                 Console.WriteLine();
                 Console.WriteLine("Sample complete, hit ENTER to exit...");
                 Console.ReadLine();
-            }
-        }
-
-        private static void CreateBatchPool(BatchClient batchClient, VirtualMachineConfiguration vmConfiguration)
-        {
-            try
-            {
-                CloudPool pool = batchClient.PoolOperations.CreatePool(
-                    poolId: PoolId,
-                    targetDedicatedComputeNodes: PoolNodeCount,
-                    virtualMachineSize: PoolVMSize,
-                    virtualMachineConfiguration: vmConfiguration);
-
-                pool.Commit();
-            }
-            catch (BatchException be)
-            {
-                // Accept the specific error code PoolExists as that is expected if the pool already exists
-                if (be.RequestInformation?.BatchError?.Code == BatchErrorCodeStrings.PoolExists)
-                {
-                    Console.WriteLine("The pool {0} already existed when we tried to create it", PoolId);
-                }
-                else
-                {
-                    throw; // Any other exception is unexpected
-                }
-            }
-        }
-
-        private static VirtualMachineConfiguration CreateVirtualMachineConfiguration(ImageReference imageReference)
-        {
-            return new VirtualMachineConfiguration(
-                imageReference: imageReference,
-                nodeAgentSkuId: "batch.node.windows amd64");
-        }
-
-        private static ImageReference CreateImageReference()
-        {
-            return new ImageReference(
-                publisher: "MicrosoftWindowsServer",
-                offer: "WindowsServer",
-                sku: "2016-datacenter-smalldisk",
-                version: "latest");
-        }
-
-        /// <summary>
-        /// Creates a blob client
-        /// </summary>
-        /// <param name="storageAccountName">The name of the Storage Account</param>
-        /// <param name="storageAccountKey">The key of the Storage Account</param>
-        /// <returns></returns>
-        private static BlobServiceClient GetBlobServiceClient(string storageAccountName, string storageAccountKey)
-        {
-            var sharedKeyCredential = new StorageSharedKeyCredential(storageAccountName, storageAccountKey);
-            string blobUri = "https://" + storageAccountName + ".blob.core.windows.net";
-
-            var blobServiceClient = new BlobServiceClient(new Uri(blobUri), sharedKeyCredential);
-            return blobServiceClient;
-        }
-
-        /// <summary>
-        /// Uploads the specified file to the specified Blob container.
-        /// </summary>
-        /// <param name="containerClient">A <see cref="BlobContainerClient"/>.</param>
-        /// <param name="containerName">The name of the blob storage container to which the file should be uploaded.</param>
-        /// <param name="filePath">The full path to the file to upload to Storage.</param>
-        /// <returns>A ResourceFile instance representing the file within blob storage.</returns>
-        private static ResourceFile UploadFileToContainer(BlobContainerClient containerClient, string containerName, string filePath, string storedPolicyName = null)
-        {
-            Console.WriteLine("Uploading file {0} to container [{1}]...", filePath, containerName);
-            string blobName = Path.GetFileName(filePath);
-            filePath = Path.Combine(Environment.CurrentDirectory, filePath);
-
-            var blobClient = containerClient.GetBlobClient(blobName);
-            blobClient.Upload(filePath, true);
-
-            // Set the expiry time and permissions for the blob shared access signature. 
-            // In this case, no start time is specified, so the shared access signature 
-            // becomes valid immediately
-            // Check whether this BlobContainerClient object has been authorized with Shared Key.
-            if (blobClient.CanGenerateSasUri)
-            {
-                // Create a SAS token
-                var sasBuilder = new BlobSasBuilder()
-                {
-                    BlobContainerName = containerClient.Name,
-                    BlobName = blobClient.Name,
-                    Resource = "b"
-                };
-
-                if (storedPolicyName == null)
-                {
-                    sasBuilder.ExpiresOn = DateTimeOffset.UtcNow.AddHours(1);
-                    sasBuilder.SetPermissions(BlobContainerSasPermissions.Read);
-                }
-                else
-                {
-                    sasBuilder.Identifier = storedPolicyName;
-                }
-
-                var sasUri = blobClient.GenerateSasUri(sasBuilder).ToString();
-                return ResourceFile.FromUrl(sasUri, filePath);
-            }
-            else
-            {
-                throw new InvalidOperationException("BlobClient must be authorized with shared key credentials to create a service SAS.");
-            }
+            }*/
         }
     }
 }
