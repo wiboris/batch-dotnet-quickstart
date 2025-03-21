@@ -10,6 +10,7 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -20,9 +21,8 @@ namespace Azure.Compute.Batch.Quickstart
     public class BatchDotNetQuickStart
     {
         // The following constants are used to configure the Batch account and storage account, replace with valid storage and batch account values.
-        private const string StorageAccountUri = "https://MYSTORAGEACCOUNT.blob.core.windows.net/";
-        private const string BatchAccountResourceId = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.Batch/batchAccounts/myBatchAccount";
-
+        private const string StorageAccountUri = "https://dotnotsdkbatchstorage1.blob.core.windows.net/";
+        private const string BatchAccountResourceId = "/subscriptions/25d5d4d6-d9c8-4053-9e3f-c47c2960a69b/resourceGroups/automation/providers/Microsoft.Batch/batchAccounts/dotnotsdkbatchaccount2";
         private const string PoolId = "DotNetQuickstartPool";
         private const string JobId = "DotNetQuickstartJob";
 
@@ -40,6 +40,11 @@ namespace Azure.Compute.Batch.Quickstart
         /// <returns>A task which completes when the sample has finished running.</returns>
         public async Task Run()
         {
+            Console.WriteLine("Sample start: {0}", DateTime.Now);
+            Console.WriteLine();
+            var timer = new Stopwatch();
+            timer.Start();
+
             // #1 Create the clients need for the operations
 
             // Get the default Azure credential, which will be used to authenticate the clients
@@ -83,7 +88,6 @@ namespace Azure.Compute.Batch.Quickstart
             // #3 Create a Batch pool
             await CreateBatchPool();
 
-
             // #4 Create a Batch job
             Console.WriteLine("Creating job [{0}]...", JobId);
 
@@ -99,7 +103,6 @@ namespace Azure.Compute.Batch.Quickstart
             }
             catch (RequestFailedException e)
             {
-                /* not available in this version
                 BatchError be = BatchError.FromException(e);
                 // Accept the specific error code JobExists as that is expected if the job already exists
                 if (be.Code == BatchErrorCodeStrings.JobExists)
@@ -110,7 +113,6 @@ namespace Azure.Compute.Batch.Quickstart
                 {
                     throw; // Any other exception is unexpected
                 }
-                */
             }
 
             // #5 Create the tasks to be executed
@@ -132,11 +134,13 @@ namespace Azure.Compute.Batch.Quickstart
                 };
                 tasks.Add(task);
             }
-            BatchTaskGroup batchTaskGroup = new BatchTaskGroup(tasks);
-            BatchTaskAddCollectionResult taskResult = await _batchClient.CreateTaskCollectionAsync(JobId, batchTaskGroup);
-            
+
+            CreateTasksResult createTasksResult= await _batchClient.CreateTasksAsync(JobId, tasks);
 
             // Monitor task success/failure, specifying a maximum amount of time to wait for the tasks to complete.
+            TimeSpan timeout = TimeSpan.FromMinutes(30);
+            Console.WriteLine("Monitoring all tasks for 'Completed' state, timeout in {0}...", timeout);
+
             await waitForTasksToComplete(JobId);
             Console.WriteLine("All tasks reached state Completed.");
 
@@ -157,6 +161,12 @@ namespace Azure.Compute.Batch.Quickstart
                 Console.WriteLine(stdout);
             }
 
+            // Print out some timing info
+            timer.Stop();
+            Console.WriteLine();
+            Console.WriteLine("Sample end: {0}", DateTime.Now);
+            Console.WriteLine("Elapsed time: {0}", timer.Elapsed);
+
             // #5 Clean up resources
 
             // Clean up Storage resources
@@ -176,7 +186,7 @@ namespace Azure.Compute.Batch.Quickstart
             response = Console.ReadLine().ToLower();
             if (response != "n" && response != "no")
             {
-                _batchClient.DeletePool(PoolId);
+               _batchClient.DeletePool(PoolId);
             }
         }
 
@@ -223,33 +233,40 @@ namespace Azure.Compute.Batch.Quickstart
         ///
         public async Task CreateBatchPool()
         {
-            // Create a Batch pool with a single node
-            var imageReference = new BatchImageReference()
+            try
             {
-                Publisher = "MicrosoftWindowsServer",
-                Offer = "WindowsServer",
-                Sku = "2019-datacenter-smalldisk",
-                Version = "latest"
-            };
-            string nodeAgentSku = "batch.node.windows amd64";
-
-            ArmOperation<BatchAccountPoolResource> armOperation = await _batchAccountResource.GetBatchAccountPools().CreateOrUpdateAsync(
-                WaitUntil.Completed, PoolId, new BatchAccountPoolData()
+                // Create a Batch pool with a single node
+                var imageReference = new BatchImageReference()
                 {
-                    VmSize = "Standard_DS1_v2",
-                    DeploymentConfiguration = new BatchDeploymentConfiguration()
+                    Publisher = "MicrosoftWindowsServer",
+                    Offer = "WindowsServer",
+                    Sku = "2019-datacenter-smalldisk",
+                    Version = "latest"
+                };
+                string nodeAgentSku = "batch.node.windows amd64";
+
+                ArmOperation<BatchAccountPoolResource> armOperation = await _batchAccountResource.GetBatchAccountPools().CreateOrUpdateAsync(
+                    WaitUntil.Completed, PoolId, new BatchAccountPoolData()
                     {
-                        VmConfiguration = new BatchVmConfiguration(imageReference, nodeAgentSku)
-                    },
-                    ScaleSettings = new BatchAccountPoolScaleSettings()
-                    {
-                        FixedScale = new BatchAccountFixedScaleSettings()
+                        VmSize = "Standard_DS1_v2",
+                        DeploymentConfiguration = new BatchDeploymentConfiguration()
                         {
-                            TargetDedicatedNodes = 1
+                            VmConfiguration = new BatchVmConfiguration(imageReference, nodeAgentSku)
+                        },
+                        ScaleSettings = new BatchAccountPoolScaleSettings()
+                        {
+                            FixedScale = new BatchAccountFixedScaleSettings()
+                            {
+                                TargetDedicatedNodes = 1
+                            }
                         }
-                    }
-                });
-            BatchAccountPoolResource pool = armOperation.Value;
+                    });
+                BatchAccountPoolResource pool = armOperation.Value;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+            }
         }
 
 
